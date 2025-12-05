@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const mongoURI = process.env.MONGO_URI;
 
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
@@ -12,7 +13,7 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-connectDB(process.env.MONGO_URI);
+connectDB(mongoURI);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/posts', postRoutes);
