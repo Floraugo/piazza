@@ -1,0 +1,95 @@
+name: Deploy Piazza API to GKE
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  CLUSTER_NAME: piazza-cluster
+  CLUSTER_ZONE: us-west3-c
+  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/piazza-api
+
+jobs:
+  build-and-deploy:
+    name: Build → Push → Deploy to GKE
+    runs-on: ubuntu-latest
+
+    steps:
+      # --------------------------
+      # CHECKOUT REPO 
+      # --------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # --------------------------
+      # SETUP DOCKER AUTH FOR DOCKER HUB
+      # --------------------------
+      - name: Docker login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # --------------------------
+      # BUILD DOCKER IMAGE
+      # --------------------------
+      - name: Build Docker image
+        run: |
+          docker build -t $DOCKER_IMAGE:latest .
+
+      # --------------------------
+      # PUSH TO DOCKER HUB
+      # --------------------------
+      - name: Push Docker image to DockerHub
+        run: |
+          docker push $DOCKER_IMAGE:latest
+
+      # --------------------------
+      # SETUP GOOGLE CLOUD AUTH
+      # --------------------------
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # --------------------------
+      # INSTALL GCLOUD SDK
+      # --------------------------
+      - name: Install gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      # --------------------------
+      # GET GKE CREDENTIALS
+      # --------------------------
+      - name: Get GKE Credentials
+        run: |
+          gcloud container clusters get-credentials $CLUSTER_NAME \
+            --zone $CLUSTER_ZONE \
+            --project $PROJECT_ID
+
+      # --------------------------
+      # APPLY KUBERNETES MANIFESTS
+      # (Deployment + Service)
+      # --------------------------
+      - name: Deploy manifests to GKE
+        run: |
+          kubectl apply -f k8s/
+
+      # --------------------------
+      # FORCE ROLLOUT UPDATE (pull new image)
+      # --------------------------
+      - name: Rollout deployment
+        run: |
+          kubectl rollout restart deployment/piazza-deployment
+
+      # --------------------------
+      # VERIFY ROLLOUT
+      # --------------------------
+      - name: Verify rollout status
+        run: |
+          kubectl rollout status deployment/piazza-deployment
